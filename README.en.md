@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="assets/AppIcon.png" width="96" height="96" alt="MacBar application icon">
+
 # MacBar
 
 **A little more room in your Mac's menu bar.**
@@ -18,7 +20,7 @@ Native macOS menu bar management, built with Objective-C and AppKit.
 
 MacBar moves less-used menu bar items into a floating collection panel. Keep your essentials at the top, reopen applications from the panel, or interact with their native tray menus. **Screen capture is off by default. MacBar manages existing menu bar status items, not every running application's Dock icon.**
 
-> **Preview software:** Version 2.5.1 has 117 regression assertions and limited hands-on validation. Compatibility across every app, macOS version, display arrangement and full-screen mode has not been established. Menu bar manipulation uses private window APIs and may be affected by system updates.
+> **Preview software:** Version 2.5.2 has 117 regression assertions and limited hands-on validation. Compatibility across every app, macOS version, display arrangement and full-screen mode has not been established. Menu bar manipulation uses private window APIs and may be affected by system updates.
 
 ## Features
 

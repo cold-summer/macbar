@@ -35,6 +35,11 @@ jobs:
         run: |
           lipo build/MacBar.app/Contents/MacOS/MacBar -verify_arch arm64 x86_64
           codesign --verify --strict build/MacBar.app
+      - name: Verify application icon
+        run: |
+          icon=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIconFile' build/MacBar.app/Contents/Info.plist)
+          iconutil -c iconset "build/MacBar.app/Contents/Resources/$icon" -o build/MacBar.iconset
+          test -s build/MacBar.iconset/icon_512x512@2x.png
       - name: Upload preview artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

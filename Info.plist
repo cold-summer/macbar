@@ -10,12 +10,14 @@
 	<string>cc.icc.macbar</string>
 	<key>CFBundleName</key>
 	<string>MacBar</string>
+	<key>CFBundleIconFile</key>
+	<string>MacBar.icns</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2.5.1</string>
+	<string>2.5.2</string>
 	<key>CFBundleVersion</key>
-	<string>14</string>
+	<string>16</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>LSUIElement</key>

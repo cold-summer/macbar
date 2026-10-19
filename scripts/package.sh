@@ -13,6 +13,7 @@ ditto "$ROOT/build/MacBar.app" "$STAGING/MacBar.app"
 cp "$ROOT/LICENSE" "$ROOT/NOTICE" "$ROOT/README.md" "$ROOT/README.en.md" "$ROOT/CHANGELOG.md" \
   "$ROOT/CONTRIBUTING.md" "$ROOT/CODE_OF_CONDUCT.md" "$ROOT/SECURITY.md" "$STAGING/"
 ditto "$ROOT/docs" "$STAGING/docs"
+ditto "$ROOT/assets" "$STAGING/assets"
 ARCHIVE="MacBar-$VERSION-universal.zip"
 ditto -c -k --norsrc --noextattr --noacl "$STAGING" "$ROOT/dist/$ARCHIVE"
 (

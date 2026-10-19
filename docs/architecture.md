@@ -8,10 +8,13 @@ MacBar 是直接通过 Clang 构建的 Objective-C / AppKit 应用，无 Xcode �
 main.m                AppKit 界面、窗口扫描、图标移动、原生点击和恢复
 MBPolicy.h / .m       身份、几何、图像、点击路由与恢复判定函数
 Info.plist            应用身份、版本与最低系统要求
+assets/AppIcon.svg    应用图标矢量母版
 tests/regression.m    模拟窗口及应用包的回归测试
 scripts/              构建、测试、安装和发布打包
 .github/workflows/    CI 与预览版发布
 ```
+
+构建时 `scripts/make-icon.sh` 将矢量母版转换为标准多尺寸 `.icns`，通过 `CFBundleIconFile` 声明供 Spotlight、访达和系统信息使用；该资源不涉及屏幕捕获。
 
 ## 图标身份与配置
 

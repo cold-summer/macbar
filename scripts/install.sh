@@ -36,4 +36,9 @@ except BaseException:
 if os.path.exists(previous): shutil.rmtree(previous)
 PY
 codesign --verify --strict "$DEST"
+# Refresh the bundle registration so Finder and Spotlight can pick up a newly
+# supplied application icon without restarting Finder or clearing global caches.
+touch "$DEST"
+REGISTER='/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister'
+if [ -x "$REGISTER" ]; then "$REGISTER" -f "$DEST" >/dev/null 2>&1 || true; fi
 echo "Installed: $DEST"

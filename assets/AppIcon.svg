@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">MacBar</title>
+  <desc id="desc">Three white menu items collected in an ice-blue tray on a midnight-blue rounded square.</desc>
+  <defs>
+    <linearGradient id="tile" x1=".18" y1="0" x2=".75" y2="1">
+      <stop stop-color="#244e91"/>
+      <stop offset=".42" stop-color="#103367"/>
+      <stop offset="1" stop-color="#081b3a"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2=".8" y2="1">
+      <stop stop-color="#92c2ec" stop-opacity=".7"/>
+      <stop offset=".5" stop-color="#4e89be" stop-opacity=".2"/>
+      <stop offset="1" stop-color="#062344" stop-opacity=".65"/>
+    </linearGradient>
+    <linearGradient id="porcelain" x1="0" y1="0" x2=".9" y2="1">
+      <stop stop-color="#ffffff"/>
+      <stop offset=".6" stop-color="#f1f6ff"/>
+      <stop offset="1" stop-color="#c8ddf5"/>
+    </linearGradient>
+    <linearGradient id="tray" x1="0" y1="476" x2="0" y2="710" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#b3f4ff"/>
+      <stop offset=".55" stop-color="#72d5f6"/>
+      <stop offset="1" stop-color="#439bdc"/>
+    </linearGradient>
+    <radialGradient id="light" cx=".3" cy="0" r="1">
+      <stop stop-color="#66b6ff" stop-opacity=".18"/>
+      <stop offset=".7" stop-color="#66b6ff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="12" stdDeviation="10" flood-color="#061328" flood-opacity=".25"/>
+    </filter>
+    <filter id="lift" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="9" stdDeviation="7" flood-color="#020d24" flood-opacity=".35"/>
+    </filter>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#tile)" filter="url(#shadow)"/>
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#light)"/>
+  <rect x="66" y="66" width="892" height="892" rx="198" fill="none" stroke="url(#edge)" stroke-width="3"/>
+  <path d="M172 504v72c0 58 46 104 104 104h472c58 0 104-46 104-104v-72" fill="none" stroke="#041631" stroke-opacity=".4" stroke-width="62" stroke-linecap="round" transform="translate(0 9)"/>
+  <path d="M172 504v72c0 58 46 104 104 104h472c58 0 104-46 104-104v-72" fill="none" stroke="url(#tray)" stroke-width="56" stroke-linecap="round"/>
+  <g fill="url(#porcelain)" stroke="#ffffff" stroke-opacity=".7" stroke-width="2" filter="url(#lift)">
+    <rect x="210" y="362" width="172" height="172" rx="43"/>
+    <rect x="426" y="362" width="172" height="172" rx="43"/>
+    <rect x="642" y="362" width="172" height="172" rx="43"/>
+  </g>
+</svg>

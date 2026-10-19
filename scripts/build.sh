@@ -27,6 +27,7 @@ STAGING="$(mktemp -d "$ROOT/build/.bundle-XXXXXX")"
 trap 'rm -rf "$STAGING"' EXIT
 mkdir -p "$STAGING/MacBar.app/Contents/MacOS" "$STAGING/MacBar.app/Contents/Resources"
 cp "$ROOT/LICENSE" "$ROOT/NOTICE" "$STAGING/MacBar.app/Contents/Resources/"
+"$ROOT/scripts/make-icon.sh" "$STAGING/MacBar.app/Contents/Resources/MacBar.icns"
 cp "$ROOT/Info.plist" "$STAGING/MacBar.app/Contents/Info.plist"
 SDK="$(xcrun --sdk macosx --show-sdk-path)"
 xcrun clang -fobjc-arc -O2 -Wall -Wextra -Wno-unused-parameter -mmacosx-version-min=14.0 \

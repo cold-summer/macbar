@@ -7,7 +7,7 @@
 可在终端进入下载目录校验：
 
 ```bash
-shasum -a 256 -c MacBar-2.5.1-universal.zip.sha256
+shasum -a 256 -c MacBar-2.5.2-universal.zip.sha256
 ```
 
 校验文件与 ZIP 应来自同一 Release。校验值用于核对文件完整性，不能替代对发布来源的信任。

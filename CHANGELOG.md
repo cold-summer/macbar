@@ -2,6 +2,15 @@
 
 版本采用 `主版本.次版本.修订版本`。本仓库首次公开发布为 2.5.0 Preview，早期版本来自本地开发。
 
+## [2.5.2] — 2026-10-19
+
+### 应用图标
+
+- 新增专用 MacBar 图标，替换 Spotlight、访达和系统信息中的默认占位图。
+- 提供透明背景母版及标准 16–1024 像素 `.icns` 构建流程。
+- 安装后刷新应用注册，让系统识别新的图标资源。
+- 默认不捕获屏幕的行为保持不变。
+
 ## [2.5.1] — 2026-10-19
 
 ### 隐私默认值
@@ -47,3 +56,4 @@
 
 [2.5.0]: https://github.com/cold-summer/macbar/releases/tag/v2.5.0
 [2.5.1]: https://github.com/cold-summer/macbar/releases/tag/v2.5.1
+[2.5.2]: https://github.com/cold-summer/macbar/releases/tag/v2.5.2
