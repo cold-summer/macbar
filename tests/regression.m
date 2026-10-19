@@ -33,6 +33,8 @@ static NSUInteger checks = 0;
 @property CGError cursorResult;
 @property NSUserDefaults *testDefaults;
 @property BOOL nativeEnabled;
+@property BOOL useRealNativePolicy;
+@property BOOL collectionVisibleForCapture;
 @property BOOL captureAllowed;
 @property NSDictionary *nativeFrames;
 @property NSUInteger captureCalls;
@@ -54,7 +56,8 @@ static NSUInteger checks = 0;
     if (!self.recordPlacementPasses) { [super performPlacementPassForKeys:keys]; return; }
     self.layoutPassCount++; self.lastPlacementKeys = keys.copy; self.layoutDirty = NO;
 }
-- (BOOL)nativeAppearanceEnabled { return self.nativeEnabled; }
+- (BOOL)nativeAppearanceEnabled { return self.useRealNativePolicy ? [super nativeAppearanceEnabled] : self.nativeEnabled; }
+- (BOOL)collectionIsVisible { return self.collectionVisibleForCapture; }
 - (BOOL)capturePermissionGranted { return self.captureAllowed; }
 - (NSImage *)nativeImageForItem:(BarItem *)item bounds:(CGRect)bounds {
     self.captureCalls++; return self.nativeFrames[item.key];
@@ -248,7 +251,15 @@ int main(void) {
         CGImageRef solid = CGBitmapContextCreateImage(bitmap);
         CHECK(MBStatusImage(solid, CGSizeMake(168, 37)) == nil, "solid placeholder cannot overwrite cached native text");
         CGImageRelease(solid); CGImageRelease(raw); CGContextRelease(bitmap);
-        TestApp *render = [TestApp new]; render.nativeEnabled = YES;
+        TestApp *privacy = [TestApp new]; privacy.useRealNativePolicy = YES; privacy.testDefaults = layout.testDefaults;
+        CHECK(![privacy nativeAppearanceEnabled], "screen capture defaults off without explicit opt-in");
+        [privacy.testDefaults setBool:YES forKey:@"MBCaptureIcons"];
+        CHECK(![privacy nativeAppearanceEnabled], "legacy automatically enabled capture does not count as explicit consent");
+        [privacy.testDefaults setBool:YES forKey:@"MBNativeCaptureOptInV1"];
+        CHECK([privacy nativeAppearanceEnabled], "explicit opt-in plus native mode enables optional window capture");
+        [privacy.testDefaults setBool:NO forKey:@"MBCaptureIcons"];
+        CHECK(![privacy nativeAppearanceEnabled], "turning native mode off prevents capture despite earlier consent");
+        TestApp *render = [TestApp new]; render.nativeEnabled = YES; render.collectionVisibleForCapture = YES;
         BarItem *textItem = [BarItem new]; textItem.key = @"native-text"; textItem.windowID = 700; textItem.placement = @"bar";
         render.catalog = [NSMutableArray arrayWithObject:textItem];
         render.windows = @[Window(42, 700, CGRectMake(-5000, 0, 168, 37), NO, 25)];
@@ -257,6 +268,12 @@ int main(void) {
         CHECK(render.captureCalls == 0 && textItem.statusImage == nil, "native capture never runs without screen recording permission");
         render.captureAllowed = YES; [render captureAvailableImages];
         CHECK(textItem.statusImage == native && [render slotWidthForItem:textItem] == 174, "native image uses full width instead of old 96-point cap");
+        NSUInteger previousCaptureCalls = render.captureCalls;
+        render.collectionVisibleForCapture = NO; [render captureAvailableImages];
+        CHECK(render.captureCalls == previousCaptureCalls, "closed collection never captures in the background even when enabled and authorized");
+        render.collectionVisibleForCapture = YES; render.nativeEnabled = NO; [render captureAvailableImages];
+        CHECK(render.captureCalls == previousCaptureCalls, "visible collection still does not capture when native mode is disabled");
+        render.nativeEnabled = YES;
         NSImage *updated = [native copy]; updated.size = NSMakeSize(190, 24);
         render.nativeFrames = @{textItem.key: updated}; [render captureAvailableImages];
         CHECK(textItem.statusImage == updated && [render slotWidthForItem:textItem] == 196, "dynamic text changes refresh snapshot and layout width");

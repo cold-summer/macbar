@@ -92,6 +92,7 @@ static const CGFloat kPadY = 6;
 @property BOOL pendingRight;
 @property BOOL lastCapturePermission;
 @property NSNumber *collectionDark;
+@property NSUInteger captureInvocationCount;
 @property (nonatomic, strong) NSScrollView *settingsScroll;
 @end
 
@@ -184,9 +185,13 @@ static const CGFloat kPadY = 6;
 }
 
 - (BOOL)nativeAppearanceEnabled {
-    id value = [NSUserDefaults.standardUserDefaults objectForKey:@"MBCaptureIcons"];
-    return value ? [value boolValue] : YES;
+    NSUserDefaults *defaults = [self layoutDefaults];
+    // Earlier versions enabled capture by default. That is not explicit consent
+    // to the system's screen-capture indicator; require a fresh opt-in instead.
+    return [defaults boolForKey:@"MBNativeCaptureOptInV1"] && [defaults boolForKey:@"MBCaptureIcons"];
 }
+
+- (BOOL)collectionIsVisible { return self.panel.isVisible; }
 
 - (BOOL)capturePermissionGranted { return CGPreflightScreenCaptureAccess(); }
 
@@ -202,9 +207,9 @@ static const CGFloat kPadY = 6;
     if ([self nativeAppearanceEnabled]) {
         NSUInteger missing = 0;
         for (BarItem *item in self.items) if (!item.statusImage) missing++;
-        if (missing) return [NSString stringWithFormat:@"%lu 个图标暂未取得原样画面，正在使用应用图标；原样画面每 3 秒重试。", (unsigned long)missing];
+        if (missing) return [NSString stringWithFormat:@"%lu 个图标暂用应用图标；打开收集栏后读取原样画面", (unsigned long)missing];
     }
-    return [self nativeAppearanceEnabled] ? @"原样显示菜单栏图标和文字，每 3 秒刷新" : @"当前仅显示应用图标，不包含菜单栏文字";
+    return [self nativeAppearanceEnabled] ? @"仅在收集栏打开时读取原样画面；macOS 会显示屏幕捕获提示" : @"使用应用图标，不捕获屏幕；菜单栏图标仍会自动检测";
 }
 
 - (void)reportError:(NSString *)message {
@@ -614,7 +619,7 @@ static id MBAXValue(AXUIElementRef element, CFStringRef attribute) {
     if (self.settingsWindow.isVisible) self.statusLabel.stringValue = [self settingsStatus];
     NSUInteger nativeCount = 0;
     for (BarItem *item in self.items) if (item.statusImage) nativeCount++;
-    NSMutableString *line = [NSMutableString stringWithFormat:@"trusted=%d\nnativeMode=%d screenCapture=%d nativeImages=%lu/%lu appearance=%@\nbar=%@\n", AXIsProcessTrusted(), [self nativeAppearanceEnabled], [self capturePermissionGranted], (unsigned long)nativeCount, (unsigned long)self.items.count, self.collectionDark.boolValue ? @"dark" : @"light", [[self.items valueForKey:@"name"] componentsJoinedByString:@", "]];
+    NSMutableString *line = [NSMutableString stringWithFormat:@"trusted=%d\nnativeMode=%d screenCapture=%d nativeImages=%lu/%lu appearance=%@ captureRequests=%lu\nbar=%@\n", AXIsProcessTrusted(), [self nativeAppearanceEnabled], [self capturePermissionGranted], (unsigned long)nativeCount, (unsigned long)self.items.count, self.collectionDark.boolValue ? @"dark" : @"light", (unsigned long)self.captureInvocationCount, [[self.items valueForKey:@"name"] componentsJoinedByString:@", "]];
     for (BarItem *item in self.catalog) {
         [line appendFormat:@"%@ | %@ | %@ | native=%@ size=%@ window=%u left=%@\n", item.placement, item.name, item.key, item.statusImage ? @"yes" : @"no", NSStringFromSize(item.statusImage.size), item.windowID, [self clickOpensApplicationForItem:item right:NO] ? @"application" : @"native"];
     }
@@ -627,6 +632,7 @@ static id MBAXValue(AXUIElementRef element, CFStringRef attribute) {
 }
 
 - (NSImage *)nativeImageForItem:(BarItem *)item bounds:(CGRect)bounds {
+    if (![self nativeAppearanceEnabled] || ![self collectionIsVisible] || ![self capturePermissionGranted]) return nil;
     // Explicit ID arrays also include offscreen status windows. The list-option
     // form can return no drawable content after an item is moved off the display.
     const void *window = (const void *)(uintptr_t)item.windowID;
@@ -634,6 +640,7 @@ static id MBAXValue(AXUIElementRef element, CFStringRef attribute) {
     if (!windows) return nil;
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    self.captureInvocationCount++;
     CGImageRef image = CGWindowListCreateImageFromArray(CGRectNull, windows, kCGWindowImageBoundsIgnoreFraming | kCGWindowImageBestResolution);
 #pragma clang diagnostic pop
     CFRelease(windows);
@@ -644,7 +651,7 @@ static id MBAXValue(AXUIElementRef element, CFStringRef attribute) {
 }
 
 - (void)captureAvailableImages {
-    if (![self nativeAppearanceEnabled] || ![self capturePermissionGranted]) return;
+    if (![self nativeAppearanceEnabled] || ![self collectionIsVisible] || ![self capturePermissionGranted]) return;
     NSMutableArray *missing = [NSMutableArray array];
     for (BarItem *item in self.catalog) {
         if ([item.placement isEqualToString:@"hidden"]) continue;
@@ -667,7 +674,7 @@ static id MBAXValue(AXUIElementRef element, CFStringRef attribute) {
 }
 
 - (void)requestNativeFallback:(NSArray<NSDictionary *> *)requests {
-    if (!requests.count || ![self nativeAppearanceEnabled] || ![self capturePermissionGranted]) return;
+    if (!requests.count || ![self nativeAppearanceEnabled] || ![self collectionIsVisible] || ![self capturePermissionGranted]) return;
     // Composite window capture uses the same approved window snapshots as the
     // primary path. Do not start/stop a ScreenCaptureKit session every refresh.
     const void **identifiers = calloc(requests.count, sizeof(void *));
@@ -684,6 +691,7 @@ static id MBAXValue(AXUIElementRef element, CFStringRef attribute) {
     if (!CGRectIsEmpty(frame) && frame.size.width <= 16384) {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        self.captureInvocationCount++;
         image = CGWindowListCreateImageFromArray(CGRectNull, windows, kCGWindowImageBoundsIgnoreFraming | kCGWindowImageBestResolution);
 #pragma clang diagnostic pop
     }
@@ -704,7 +712,8 @@ static id MBAXValue(AXUIElementRef element, CFStringRef attribute) {
 
 - (void)toggleCapture:(NSButton *)button {
     BOOL enabled = button.state == NSControlStateValueOn;
-    [NSUserDefaults.standardUserDefaults setBool:enabled forKey:@"MBCaptureIcons"];
+    [[self layoutDefaults] setBool:enabled forKey:@"MBCaptureIcons"];
+    [[self layoutDefaults] setBool:enabled forKey:@"MBNativeCaptureOptInV1"];
     if (enabled && ![self capturePermissionGranted]) [self openScreenRecordingSettings];
     if (!enabled) [self.imageCache removeAllObjects];
     [self reloadItems];
@@ -1048,7 +1057,7 @@ static id MBAXValue(AXUIElementRef element, CFStringRef attribute) {
         window.minSize = NSMakeSize(580, 500);
         window.releasedWhenClosed = NO;
         NSView *content = window.contentView;
-        NSTextField *note = [NSTextField wrappingLabelWithString:@"「不显示」会从顶部和收集栏隐藏图标，可在设置中改回。系统图标也可设置位置；若系统不允许移动，会保留原设置并提示。"];
+        NSTextField *note = [NSTextField wrappingLabelWithString:@"这里只管理右上角菜单栏图标，普通 Dock 应用不会自动加入。默认不捕获屏幕；开启原样图标后，macOS 会显示屏幕捕获提示。"];
         note.font = [NSFont systemFontOfSize:12];
         note.textColor = NSColor.secondaryLabelColor;
         note.frame = NSMakeRect(16, 10, 548, 48);
@@ -1056,11 +1065,11 @@ static id MBAXValue(AXUIElementRef element, CFStringRef attribute) {
         [content addSubview:note];
         NSButton *access = [self smallButton:@"辅助功能权限" action:@selector(openAccessibilitySettings)];
         access.frame = NSMakeRect(16, 64, 140, 28); [content addSubview:access];
-        NSButton *capture = [NSButton checkboxWithTitle:@"保留菜单栏原样（图标和文字）" target:self action:@selector(toggleCapture:)];
+        NSButton *capture = [NSButton checkboxWithTitle:@"原样图标（会触发录屏提示）" target:self action:@selector(toggleCapture:)];
         capture.frame = NSMakeRect(170, 64, 250, 28);
         capture.state = [self nativeAppearanceEnabled] ? NSControlStateValueOn : NSControlStateValueOff;
         [content addSubview:capture];
-        NSButton *screenCapture = [self smallButton:@"屏幕录制权限" action:@selector(openScreenRecordingSettings)];
+        NSButton *screenCapture = [self smallButton:@"录屏权限（可选）" action:@selector(openScreenRecordingSettings)];
         screenCapture.frame = NSMakeRect(434, 64, 130, 28);
         [content addSubview:screenCapture];
         self.statusLabel = [NSTextField labelWithString:@""];
