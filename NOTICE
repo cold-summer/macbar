@@ -1,0 +1,29 @@
+MacBar
+Copyright (C) 2026 cold-summer and MacBar contributors
+https://github.com/cold-summer/macbar
+
+This project is distributed under the GNU General Public License, version 3
+or (at your option) any later version. See LICENSE for the full terms.
+
+Third-party acknowledgments
+---------------------------
+Ice — https://github.com/jordanbaird/Ice
+Copyright (C) 2024 Jordan Baird
+License: GNU GPL version 3 or any later version.
+
+MacBar's menu bar event construction and relay, explicit-window native image
+capture, and display/window handling reference and adapt implementation
+techniques from these Ice source files:
+
+  Ice/MenuBar/MenuBarItems/MenuBarItemManager.swift
+  Ice/MenuBar/MenuBarItems/MenuBarItemImageCache.swift
+  Ice/Utilities/ScreenCapture.swift
+
+MacBar implements this functionality in Objective-C, with its own collection
+panel, identity policy, settings, generic click routing and bounded recovery
+flow. These are modified implementations maintained by this repository;
+MacBar is not an official Ice release. The upstream license text, including
+its attribution, is retained in LICENSE.
+
+Apple, macOS, AppKit and other product names are trademarks of their
+respective owners. Their use does not imply endorsement.

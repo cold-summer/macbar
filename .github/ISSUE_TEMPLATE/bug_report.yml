@@ -1,0 +1,54 @@
+name: Bug report / 问题反馈
+description: 报告可复现的行为、权限或显示问题 / Report a reproducible problem.
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "请先阅读故障排查文档。不要上传未经检查的个人日志或桌面截图。 / Review and redact diagnostics before sharing."
+  - type: input
+    id: macbar-version
+    attributes:
+      label: MacBar 版本 / Version
+      placeholder: 2.5.0 Preview
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 系统与硬件 / Environment
+      description: macOS 版本、Apple Silicon / Intel、显示器数量；是否全屏或自动隐藏菜单栏。
+      placeholder: macOS 14.6, Apple Silicon, 2 displays
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤 / Steps to reproduce
+      placeholder: "1. 打开收集栏\n2. 左键点击…\n3. …"
+    validations:
+      required: true
+  - type: textarea
+    id: expected-actual
+    attributes:
+      label: 预期与实际 / Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: affected-app
+    attributes:
+      label: 受影响应用 / Affected application
+      description: 应用名称、版本，以及直接在顶部点击时的行为（如适用）。
+  - type: checkboxes
+    id: permissions
+    attributes:
+      label: 权限和恢复 / Permissions and recovery
+      options:
+        - label: 已允许 MacBar 辅助功能权限 / Accessibility is enabled
+        - label: 已允许屏幕录制权限 / Screen Recording is enabled
+        - label: 已尝试“展开全部”或“重新应用布局” / Tried reveal all or reapply layout
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 脱敏后的诊断（可选） / Redacted diagnostics (optional)
+      description: 只分享相关几行，删除个人信息和不希望公开的应用文字。

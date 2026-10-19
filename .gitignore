@@ -1,0 +1,27 @@
+# Generated output and local history
+/build/
+/dist/
+/backups/
+*.dSYM/
+*.o
+*.a
+*.zip
+*.dmg
+*.log
+*.jsonl
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.p12
+*.pfx
+*.key
+*.mobileprovision
+
+# Editor and operating-system files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~

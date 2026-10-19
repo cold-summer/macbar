@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Troubleshooting / 故障排查
+    url: https://github.com/cold-summer/macbar/blob/main/docs/troubleshooting.md
+    about: 常见权限、点击、图标恢复与诊断问题。
+  - name: Private security report / 私密安全报告
+    url: https://github.com/cold-summer/macbar/security/advisories/new
+    about: 不要在公开 Issue 中提交敏感安全问题。
