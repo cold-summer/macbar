@@ -35,10 +35,10 @@ The current application interface is in Simplified Chinese.
 
 ## Install
 
-Requires **macOS 14+**. Release ZIPs contain Apple Silicon and Intel slices.
+Requires **macOS 14+**. Both release formats contain Apple Silicon and Intel slices.
 
-1. Download the universal ZIP from [Releases](https://github.com/cold-summer/macbar/releases).
-2. Extract and move `MacBar.app` into `~/Applications` or `/Applications`.
+1. Download the recommended universal PKG from [Releases](https://github.com/cold-summer/macbar/releases).
+2. Open the installer package and follow its prompts; it installs `MacBar.app` into Applications. A universal ZIP is also available for manual installation into `~/Applications` or `/Applications`.
 3. Open MacBar and use **去开启…** in the **辅助功能** section to grant Accessibility access. The page shows the actual permission in green when granted, or **先开启才能用** when required.
 4. **标准图标** (standard icons) needs no Screen Recording access. Choose **与顶部一致** (match the menu bar) to preserve native pixels and text. A first-use explanation precedes authorization. Access applies to MacBar, with no separate setup for newly installed applications. Reopen if macOS requests it. Permission and display mode are shown separately.
 5. Left-click the four-square menu bar button to open the panel; right-click for settings and recovery actions.
@@ -70,7 +70,7 @@ MACBAR_SIGN_IDENTITY="Your Code Signing Identity" ./scripts/install.sh
 MACBAR_SIGN_IDENTITY=- ./scripts/package.sh
 ```
 
-The packaging script builds a universal app and produces a ZIP with a SHA-256 checksum in `dist/`. No developer certificate is needed for a local ad-hoc build.
+The packaging script builds a universal app and produces PKG and ZIP packages with SHA-256 checksums in `dist/`. No developer certificate is needed for a local ad-hoc build.
 
 ## Recovery and limitations
 

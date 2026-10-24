@@ -27,10 +27,12 @@ jobs:
         run: for script in scripts/*.sh; do bash -n "$script"; done
       - name: Run regression assertions
         run: ./scripts/test.sh
-      - name: Build universal preview package
+      - name: Build universal preview packages
         run: ./scripts/package.sh
       - name: Verify package checksum
         run: cd dist && shasum -a 256 -c *.sha256
+      - name: Verify PKG payload
+        run: pkgutil --payload-files dist/*.pkg | grep -Fx './MacBar.app/Contents/MacOS/MacBar'
       - name: Verify architectures and signature
         run: |
           lipo build/MacBar.app/Contents/MacOS/MacBar -verify_arch arm64 x86_64

@@ -40,7 +40,7 @@ MacBar 将不常用的菜单栏图标收进一个悬浮收集栏，保留常用�
 ## 系统要求
 
 - macOS **14.0 或更新版本**。
-- 发布 ZIP 包包含 Apple Silicon 和 Intel 两种架构。
+- 发布 PKG 和 ZIP 都包含 Apple Silicon 与 Intel 两种架构。
 - **辅助功能权限**：用于移动菜单栏图标和转发点击。
 - **屏幕录制权限（可选，默认不使用）**：仅为主动开启的原样图标模式读取图标和文字画面；检测图标、移动图标、打开应用不需要它。
 
@@ -48,8 +48,8 @@ MacBar 将不常用的菜单栏图标收进一个悬浮收集栏，保留常用�
 
 ## 安装与首次使用
 
-1. 从 [Releases](https://github.com/cold-summer/macbar/releases) 下载 `MacBar-版本号-universal.zip`，解压。
-2. 将 `MacBar.app` 放进 `~/Applications` 或 `/Applications`，再打开。
+1. 从 [Releases](https://github.com/cold-summer/macbar/releases) 下载推荐使用的 `MacBar-版本号-universal.pkg`，双击后按安装器提示完成安装。
+2. 安装器会把 MacBar 放到 `/Applications`，完成后直接打开。偏好手动管理文件时也可下载 universal ZIP，解压后放入 `~/Applications` 或 `/Applications`。
 3. 在偏好设置的“辅助功能”区域点击“去开启…”，允许 MacBar。页面读取系统实际授权状态：已开启显示绿色，未开启显示“先开启才能用”。
 4. “图标显示”默认选择“标准图标”，无需录屏。如需同步顶部数字和状态文字，选择“与顶部一致”。首次设置会解释系统录屏权限的用途，再由你授权；按系统提示重新打开应用。授权对象是 MacBar，不需要每安装一个应用就重新设置。已授权不代表正在使用。
 5. 左键点击菜单栏中的四格图标打开收集栏；右键打开设置、展开全部或重新应用布局。

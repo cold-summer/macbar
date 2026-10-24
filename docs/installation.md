@@ -2,15 +2,19 @@
 
 ## 下载预览版
 
-从 [GitHub Releases](https://github.com/cold-summer/macbar/releases) 下载 universal ZIP，解压后将 `MacBar.app` 移入 `~/Applications` 或 `/Applications`。无需安装额外运行库。
+从 [GitHub Releases](https://github.com/cold-summer/macbar/releases) 下载推荐的 universal PKG，双击后按系统安装器提示完成安装。安装位置固定为 `/Applications/MacBar.app`，无需安装额外运行库。
+
+偏好手动管理文件时，也可以下载 universal ZIP，解压后将 `MacBar.app` 移入 `~/Applications` 或 `/Applications`。两种格式包含相同的应用，同时支持 Apple Silicon 与 Intel Mac，均要求 macOS 14 或更新版本。
 
 可在终端进入下载目录校验：
 
 ```bash
+shasum -a 256 -c MacBar-2.5.3-universal.pkg.sha256
+# 使用 ZIP 安装时：
 shasum -a 256 -c MacBar-2.5.3-universal.zip.sha256
 ```
 
-校验文件与 ZIP 应来自同一 Release。校验值用于核对文件完整性，不能替代对发布来源的信任。
+校验文件与安装包应来自同一 Release。校验值用于核对文件完整性，不能替代对发布来源的信任。
 
 ## 首次打开
 
@@ -75,7 +79,7 @@ MACBAR_ARCHS="arm64 x86_64" ./scripts/build.sh
 ./scripts/package.sh
 ```
 
-打包脚本始终构建 universal 并采用 ad-hoc 签名；产物和校验值位于 `dist/`。构建产物不包含本机调试符号、备份或个人偏好。
+打包脚本始终构建 universal 并采用 ad-hoc 签名，同时生成 PKG、ZIP 及各自校验值到 `dist/`。PKG 会把应用安装到 `/Applications`；构建产物不包含本机调试符号、备份或个人偏好。
 
 ## 更新与回滚
 

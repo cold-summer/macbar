@@ -27,11 +27,12 @@ jobs:
           test "$GITHUB_REF_NAME" = "v$version"
       - name: Run regression assertions
         run: ./scripts/test.sh
-      - name: Build universal package
+      - name: Build universal packages
         run: ./scripts/package.sh
       - name: Verify package and architectures
         run: |
           (cd dist && shasum -a 256 -c *.sha256)
+          pkgutil --payload-files dist/*.pkg | grep -Fx './MacBar.app/Contents/MacOS/MacBar'
           lipo build/MacBar.app/Contents/MacOS/MacBar -verify_arch arm64 x86_64
           codesign --verify --strict build/MacBar.app
       - name: Publish preview release
@@ -40,6 +41,8 @@ jobs:
         run: |
           version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' Info.plist)
           gh release create "$GITHUB_REF_NAME" \
+            "dist/MacBar-$version-universal.pkg" \
+            "dist/MacBar-$version-universal.pkg.sha256" \
             "dist/MacBar-$version-universal.zip" \
             "dist/MacBar-$version-universal.zip.sha256" \
             --repo "$GITHUB_REPOSITORY" \
