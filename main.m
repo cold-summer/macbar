@@ -21,6 +21,7 @@ static const CGFloat kPadY = 6;
 @property NSString *name;
 @property NSImage *icon;
 @property NSImage *statusImage;
+@property BOOL statusImageStale;
 @property BOOL persistentIdentity;
 @property NSString *identityToken;
 @property NSString *issue;
@@ -33,6 +34,61 @@ static const CGFloat kPadY = 6;
 @implementation BarItem
 @end
 
+static NSColor *MBSettingsGreen(void) { return [NSColor colorWithSRGBRed:0.21 green:0.46 blue:0.36 alpha:1]; }
+static NSColor *MBSettingsPaper(void) { return [NSColor colorWithSRGBRed:0.978 green:0.978 blue:0.964 alpha:1]; }
+
+@interface MBSettingsCard : NSView
+@end
+@implementation MBSettingsCard
+- (BOOL)isFlipped { return YES; }
+- (void)drawRect:(NSRect)dirtyRect {
+    NSBezierPath *path = [NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds, 0.5, 0.5) xRadius:12 yRadius:12];
+    [NSColor.whiteColor setFill];
+    [path fill];
+    [[NSColor.labelColor colorWithAlphaComponent:0.09] setStroke];
+    [path stroke];
+}
+- (void)viewDidChangeEffectiveAppearance { [super viewDidChangeEffectiveAppearance]; [self setNeedsDisplay:YES]; }
+@end
+
+@interface MBSettingsBackground : NSView
+@end
+@implementation MBSettingsBackground
+- (BOOL)isOpaque { return YES; }
+- (void)drawRect:(NSRect)dirtyRect { [MBSettingsPaper() setFill]; NSRectFill(self.bounds); }
+- (void)viewDidChangeEffectiveAppearance { [super viewDidChangeEffectiveAppearance]; [self setNeedsDisplay:YES]; }
+@end
+
+@interface MBSettingsDocument : NSView
+@end
+@implementation MBSettingsDocument
+- (BOOL)isFlipped { return YES; }
+@end
+
+@interface MBSettingsFilter : NSButton
+@end
+@implementation MBSettingsFilter
+- (void)drawRect:(NSRect)dirtyRect {
+    BOOL selected = self.state == NSControlStateValueOn;
+    if (selected || self.highlighted) {
+        [[MBSettingsGreen() colorWithAlphaComponent:selected ? 0.09 : 0.05] setFill];
+        [[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds, 0, 2) xRadius:6 yRadius:6] fill];
+    }
+    NSDictionary *attributes = @{NSFontAttributeName: [NSFont systemFontOfSize:12 weight:selected ? NSFontWeightSemibold : NSFontWeightRegular], NSForegroundColorAttributeName: selected ? MBSettingsGreen() : NSColor.secondaryLabelColor};
+    NSSize size = [self.title sizeWithAttributes:attributes];
+    [self.title drawAtPoint:NSMakePoint((NSWidth(self.bounds) - size.width) / 2, (NSHeight(self.bounds) - size.height) / 2) withAttributes:attributes];
+}
+@end
+
+static NSTextField *MBSettingsLabel(NSString *text, CGFloat size, NSFontWeight weight, NSColor *color, NSRect frame) {
+    NSTextField *label = [NSTextField labelWithString:text];
+    label.font = [NSFont systemFontOfSize:size weight:weight];
+    label.textColor = color;
+    label.frame = frame;
+    label.lineBreakMode = NSLineBreakByTruncatingTail;
+    return label;
+}
+
 @class App;
 
 @interface IconCell : NSView
@@ -42,7 +98,7 @@ static const CGFloat kPadY = 6;
 @property BOOL rightClick;
 @end
 
-@interface App : NSObject <NSApplicationDelegate>
+@interface App : NSObject <NSApplicationDelegate, NSWindowDelegate>
 @property (nonatomic, strong) NSStatusItem *anchor;
 @property (nonatomic, strong) NSStatusItem *spacer;
 @property (nonatomic, strong) NSPanel *panel;
@@ -85,6 +141,7 @@ static const CGFloat kPadY = 6;
 @property BOOL screenNeedsRefresh;
 @property NSString *lastError;
 @property NSMutableDictionary *imageCache;
+@property NSMutableSet<NSString *> *staleImageKeys;
 @property NSTextField *statusLabel;
 @property NSMutableDictionary *axDiagnostics;
 @property NSString *viewFingerprint;
@@ -94,6 +151,16 @@ static const CGFloat kPadY = 6;
 @property NSNumber *collectionDark;
 @property NSUInteger captureInvocationCount;
 @property (nonatomic, strong) NSScrollView *settingsScroll;
+@property NSArray<NSButton *> *settingsFilters;
+@property NSString *settingsPlacementFilter;
+@property NSTextField *accessibilityStatus;
+@property NSTextField *accessibilityExplanation;
+@property NSButton *accessibilityButton;
+@property NSSegmentedControl *iconModeControl;
+@property NSPopUpButton *automaticPlacementControl;
+@property NSButton *recordingSettingsButton;
+@property NSTextField *recordingStatus;
+@property NSTextField *captureExplanation;
 @end
 
 @implementation App
@@ -105,6 +172,7 @@ static const CGFloat kPadY = 6;
     if (![defaults objectForKey:@"NSStatusItem Preferred Position MacBarSpacer"])
         [defaults setDouble:360 forKey:@"NSStatusItem Preferred Position MacBarSpacer"];
     self.imageCache = [NSMutableDictionary dictionary];
+    self.staleImageKeys = [NSMutableSet set];
     self.layoutDirty = YES;
 
     self.items = [NSMutableArray array];
@@ -131,7 +199,7 @@ static const CGFloat kPadY = 6;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [self refreshEnvironment];
         NSInteger settingsVersion = [[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"] integerValue];
-        if ([defaults integerForKey:@"MBSettingsShownVersion"] < settingsVersion) {
+        if (![self accessibilityGranted] || [defaults integerForKey:@"MBSettingsShownVersion"] < settingsVersion) {
             [defaults setInteger:settingsVersion forKey:@"MBSettingsShownVersion"];
             [self showSettings];
         }
@@ -202,14 +270,14 @@ static const CGFloat kPadY = 6;
 
 - (NSString *)settingsStatus {
     if (self.lastError.length) return self.lastError;
-    if (!AXIsProcessTrusted()) return @"请启用辅助功能；授权前不会隐藏图标";
-    if ([self nativeAppearanceEnabled] && ![self capturePermissionGranted]) return @"要保留顶部的图标和动态文字，请点击「屏幕录制权限」授权 MacBar。";
+    if (![self accessibilityGranted]) return @"辅助功能：先开启才能用；授权前保持顶部图标展开。";
+    if ([self nativeAppearanceEnabled] && ![self capturePermissionGranted]) return @"图标同步尚未完成首次授权；标准图标仍可使用。";
     if ([self nativeAppearanceEnabled]) {
         NSUInteger missing = 0;
-        for (BarItem *item in self.items) if (!item.statusImage) missing++;
-        if (missing) return [NSString stringWithFormat:@"%lu 个图标暂用应用图标；打开收集栏后读取原样画面", (unsigned long)missing];
+        for (BarItem *item in self.items) if (!item.statusImage || item.statusImageStale) missing++;
+        if (missing) return [NSString stringWithFormat:@"%lu 个图标尚未同步最新画面；打开收集栏后会自动重试。", (unsigned long)missing];
     }
-    return [self nativeAppearanceEnabled] ? @"仅在收集栏打开时读取原样画面；macOS 会显示屏幕捕获提示" : @"使用应用图标，不捕获屏幕；菜单栏图标仍会自动检测";
+    return @"应用启动后，只要在顶部出现菜单栏图标，MacBar 就会自动发现。";
 }
 
 - (void)reportError:(NSString *)message {
@@ -484,6 +552,15 @@ static id MBAXValue(AXUIElementRef element, CFStringRef attribute) {
 
 - (NSUserDefaults *)layoutDefaults { return NSUserDefaults.standardUserDefaults; }
 
+- (NSString *)defaultItemPlacement {
+    return [[[self layoutDefaults] stringForKey:@"MBNewItemPlacement"] isEqualToString:@"top"] ? @"top" : @"bar";
+}
+
+- (void)defaultItemPlacementChanged:(NSPopUpButton *)control {
+    [[self layoutDefaults] setObject:control.indexOfSelectedItem == 1 ? @"top" : @"bar" forKey:@"MBNewItemPlacement"];
+    [self refillSettings];
+}
+
 - (void)rememberLayoutForItems:(NSArray<BarItem *> *)found {
     NSUserDefaults *defaults = [self layoutDefaults];
     NSArray *legacyTop = [defaults stringArrayForKey:@"MacBarTopOrder"] ?: @[];
@@ -493,7 +570,7 @@ static id MBAXValue(AXUIElementRef element, CFStringRef attribute) {
     for (BarItem *item in found) {
         if (!item.persistentIdentity || !item.bundleID.length || !item.key.length) continue;
         if ([top containsObject:item.key] || [bar containsObject:item.key] || [hidden containsObject:item.key]) continue;
-        BOOL wasTop = item.systemItem || MBLegacyContainsBundle(legacyTop, item.bundleID);
+        BOOL wasTop = item.systemItem || MBLegacyContainsBundle(legacyTop, item.bundleID) || [[self defaultItemPlacement] isEqualToString:@"top"];
         [(wasTop ? top : bar) addObject:item.key];
     }
     [defaults setObject:[NSOrderedSet orderedSetWithArray:top].array forKey:@"MBTopOrderV2"];
@@ -581,6 +658,7 @@ static id MBAXValue(AXUIElementRef element, CFStringRef attribute) {
             item.key = MBItemKey(item.bundleID, item.identityToken ?: [NSString stringWithFormat:@"session:%d:%u", pid, item.windowID]);
             if (!item.persistentIdentity) item.issue = @"无法稳定识别，保持在顶部";
             item.statusImage = [self nativeAppearanceEnabled] ? self.imageCache[item.key] : nil;
+            item.statusImageStale = [self.staleImageKeys containsObject:item.key];
             [result addObject:item];
         }
     }
@@ -600,11 +678,12 @@ static id MBAXValue(AXUIElementRef element, CFStringRef attribute) {
     [self captureAvailableImages];
     [self updateCollectionAppearance];
     NSMutableArray *signature = [NSMutableArray array];
-    for (BarItem *item in self.catalog) [signature addObject:@[item.key, item.name ?: @"", item.placement, @(item.windowID)]];
-    [signature addObject:@[@(AXIsProcessTrusted()), @(self.pendingRehide != nil), @(self.revealingForClick), self.lastError ?: @"", @([self nativeAppearanceEnabled]), @([self capturePermissionGranted])]];
+    for (BarItem *item in self.catalog) [signature addObject:@[item.key, item.name ?: @"", item.placement, @(item.windowID), @(item.statusImage != nil), @(item.statusImageStale)]];
+    [signature addObject:@[@([self accessibilityGranted]), @(self.pendingRehide != nil), @(self.revealingForClick), self.lastError ?: @"", @([self nativeAppearanceEnabled]), @([self capturePermissionGranted])]];
     NSString *fingerprint = [signature description];
     NSMutableArray *rowSignature = [NSMutableArray arrayWithObjects:NSStringFromRect([self menuScreen].visibleFrame), self.collectionDark ?: @NO, nil];
-    for (BarItem *item in self.items) [rowSignature addObject:@[item.key, item.name ?: @"", @([self slotWidthForItem:item]), @([self clickOpensApplicationForItem:item right:NO])]];
+    [rowSignature addObject:@[@([self nativeAppearanceEnabled]), @([self capturePermissionGranted])]];
+    for (BarItem *item in self.items) [rowSignature addObject:@[item.key, item.name ?: @"", @([self slotWidthForItem:item]), @([self clickOpensApplicationForItem:item right:NO]), @(item.statusImage != nil), @(item.statusImageStale)]];
     NSString *rowFingerprint = rowSignature.description;
     if (![rowFingerprint isEqualToString:self.rowFingerprint]) {
         self.rowFingerprint = rowFingerprint;
@@ -652,13 +731,17 @@ static id MBAXValue(AXUIElementRef element, CFStringRef attribute) {
 
 - (void)captureAvailableImages {
     if (![self nativeAppearanceEnabled] || ![self collectionIsVisible] || ![self capturePermissionGranted]) return;
+    if (!self.staleImageKeys) self.staleImageKeys = [NSMutableSet set];
     NSMutableArray *missing = [NSMutableArray array];
-    for (BarItem *item in self.catalog) {
-        if ([item.placement isEqualToString:@"hidden"]) continue;
+    // Only read windows whose images the open collection actually displays.
+    for (BarItem *item in self.items) {
+        if (![item.placement isEqualToString:@"bar"]) continue;
+        item.statusImageStale = YES;
+        [self.staleImageKeys addObject:item.key];
         CGRect bounds = [self boundsForWindowID:item.windowID];
         if (CGRectIsNull(bounds)) continue;
         NSImage *native = [self nativeImageForItem:item bounds:bounds];
-        if (native) { item.statusImage = native; self.imageCache[item.key] = native; }
+        if (native) [self acceptNativeImage:native forKey:item.key pid:item.pid window:item.windowID];
         else [missing addObject:@{@"key": item.key, @"pid": @(item.pid), @"window": @(item.windowID), @"bounds": [NSValue valueWithRect:bounds]}];
     }
     if (missing.count) [self requestNativeFallback:missing];
@@ -668,8 +751,10 @@ static id MBAXValue(AXUIElementRef element, CFStringRef attribute) {
     if (!image || ![self nativeAppearanceEnabled] || ![self capturePermissionGranted]) return NO;
     BarItem *current = [self itemForKey:key];
     // Captured content must never update a restarted process or a sibling status item.
-    if (!current || current.pid != pid || current.windowID != window || [current.placement isEqualToString:@"hidden"]) return NO;
+    if (!current || current.pid != pid || current.windowID != window || ![current.placement isEqualToString:@"bar"]) return NO;
     current.statusImage = image; self.imageCache[key] = image;
+    current.statusImageStale = NO;
+    [self.staleImageKeys removeObject:key];
     return YES;
 }
 
@@ -710,13 +795,44 @@ static id MBAXValue(AXUIElementRef element, CFStringRef attribute) {
     CGImageRelease(image);
 }
 
-- (void)toggleCapture:(NSButton *)button {
-    BOOL enabled = button.state == NSControlStateValueOn;
+- (void)setNativeAppearanceEnabled:(BOOL)enabled {
     [[self layoutDefaults] setBool:enabled forKey:@"MBCaptureIcons"];
     [[self layoutDefaults] setBool:enabled forKey:@"MBNativeCaptureOptInV1"];
-    if (enabled && ![self capturePermissionGranted]) [self openScreenRecordingSettings];
-    if (!enabled) [self.imageCache removeAllObjects];
+    if (!enabled) {
+        [self.imageCache removeAllObjects];
+        [self.staleImageKeys removeAllObjects];
+    }
+    self.viewFingerprint = nil; self.rowFingerprint = nil;
     [self reloadItems];
+}
+
+- (void)configureIconSync:(id)sender {
+    if ([self capturePermissionGranted]) { [self openScreenRecordingSettings]; return; }
+    NSAlert *explanation = [NSAlert new];
+    explanation.messageText = @"让收集栏显示与顶部一致的图标";
+    explanation.informativeText = @"为了读取菜单栏图标、未读数字和状态文字的画面，macOS 要求为 MacBar 开启「录屏」权限。\n\n这是对 MacBar 的统一授权，不需要每安装一个应用就重新设置。之后新出现的菜单栏图标会自动加入。\n\n只在收集栏打开时读取对应图标窗口，不保存截图、不录制视频，也不采集音频。你也可以继续使用无需录屏的标准图标。";
+    [explanation addButtonWithTitle:@"前往系统设置"];
+    [explanation addButtonWithTitle:@"使用标准图标"];
+    [explanation beginSheetModalForWindow:self.settingsWindow completionHandler:^(NSModalResponse result) {
+        [self setNativeAppearanceEnabled:result == NSAlertFirstButtonReturn];
+        if (result == NSAlertFirstButtonReturn) [self openScreenRecordingSettings];
+        [self refillSettings];
+    }];
+}
+
+- (void)iconModeChanged:(NSSegmentedControl *)control {
+    BOOL enabled = control.selectedSegment == 1;
+    if (enabled && ![self capturePermissionGranted]) [self configureIconSync:nil];
+    else [self setNativeAppearanceEnabled:enabled];
+    [self refillSettings];
+}
+
+- (void)explainIconSync:(id)sender {
+    NSAlert *help = [NSAlert new];
+    help.messageText = @"新应用会自动出现，无需逐个设置";
+    help.informativeText = @"• 标准图标：自动显示应用自身图标，无需录屏，不包含顶部的未读数字。\n\n• 与顶部一致：自动读取对应菜单栏图标的画面，可保留同一图标内的未读数字与文字。macOS 将这个权限称为「录屏」，授权对象是 MacBar，和安装了多少个应用无关。\n\n新应用需要先启动并创建菜单栏图标；只有 Dock 图标的应用不会加入。同步在收集栏打开时约每 3 秒刷新，不保存图片或视频。读取失败会提示；独立窗口绘制的角标不保证同步。";
+    [help addButtonWithTitle:@"知道了"];
+    [help beginSheetModalForWindow:self.settingsWindow completionHandler:nil];
 }
 
 - (NSButton *)gearButton {
@@ -808,6 +924,9 @@ static id MBAXValue(AXUIElementRef element, CFStringRef attribute) {
         cell.owner = self;
         cell.itemKey = self.items[idx].key;
         cell.toolTip = [self.items[idx].name stringByAppendingString:[self clickOpensApplicationForItem:self.items[idx] right:NO] ? @"\n左键：打开应用\n右键：原生菜单" : @"\n左键：原生操作\n右键：原生菜单"];
+        if ([self nativeAppearanceEnabled] && (!self.items[idx].statusImage || self.items[idx].statusImageStale)) {
+            cell.toolTip = [cell.toolTip stringByAppendingString:self.items[idx].statusImage ? @"\n显示上次画面，未读提示可能未更新" : @"\n暂用标准图标，未读提示尚未同步"];
+        }
         [self.row addSubview:cell];
         x += slot + kGap;
     }
@@ -818,7 +937,6 @@ static id MBAXValue(AXUIElementRef element, CFStringRef attribute) {
     NSButton *gear = [self gearButton];
     gear.frame = NSMakeRect(x, height - kPadY - kButton - row * (kButton + kGap), kButton, kButton);
     [self.row addSubview:gear];
-
     self.row.frame = NSMakeRect(0, 0, width, height);
     self.effect.frame = self.row.frame;
     [self.panel setContentSize:NSMakeSize(width, height)];
@@ -877,72 +995,136 @@ static id MBAXValue(AXUIElementRef element, CFStringRef attribute) {
     return button;
 }
 
-- (CGFloat)placeSection:(NSString *)title items:(NSArray<BarItem *> *)items y:(CGFloat)cursor document:(NSView *)document {
-    cursor -= 28;
-    NSTextField *header = [NSTextField labelWithString:title];
-    header.font = [NSFont systemFontOfSize:13 weight:NSFontWeightSemibold];
-    header.frame = NSMakeRect(16, cursor + 4, 240, 20);
-    [document addSubview:header];
-    for (NSUInteger idx = 0; idx < items.count; idx++) {
-        cursor -= 46;
-        [self addSettingsRow:items[idx] atY:cursor index:idx count:items.count inDocument:document];
-    }
-    return cursor;
+- (void)refreshPermissionControls {
+    BOOL trusted = [self accessibilityGranted];
+    self.accessibilityStatus.stringValue = trusted ? @"● 已开启" : @"先开启才能用";
+    self.accessibilityStatus.textColor = trusted ? MBSettingsGreen() : NSColor.systemOrangeColor;
+    self.accessibilityExplanation.stringValue = trusted ? @"可以移动图标、调整显示位置和使用原生菜单。" : @"需要辅助功能权限，才能移动和整理菜单栏图标。";
+    self.accessibilityButton.title = trusted ? @"管理权限…" : @"去开启…";
+    BOOL nativeCapture = [self nativeAppearanceEnabled];
+    BOOL captureAllowed = [self capturePermissionGranted];
+    self.iconModeControl.selectedSegment = nativeCapture ? 1 : 0;
+    [self.automaticPlacementControl selectItemAtIndex:[[self defaultItemPlacement] isEqualToString:@"top"] ? 1 : 0];
+    self.recordingSettingsButton.hidden = !nativeCapture;
+    self.recordingSettingsButton.title = captureAllowed ? @"管理授权…" : @"完成首次设置…";
+    // Permission and feature selection are separate states. Existing permission
+    // does not imply that native-image capture is active.
+    self.recordingStatus.stringValue = captureAllowed ? @"● 录屏权限已授权" : (nativeCapture ? @"同步待授权 · 标准图标可用" : @"录屏未授权 · 标准模式无需");
+    self.recordingStatus.textColor = captureAllowed ? MBSettingsGreen() : (nativeCapture ? NSColor.systemOrangeColor : NSColor.secondaryLabelColor);
+    if (!nativeCapture) self.captureExplanation.stringValue = @"自动显示应用自身图标，无需录屏；不含菜单栏未读数字。\n选择「与顶部一致」，可同步同一图标内的数字和状态文字。";
+    else if (!captureAllowed) self.captureExplanation.stringValue = @"首次使用需为 MacBar 统一授权，新应用之后会自动同步，无需逐个设置。\n点击「完成首次设置…」开启系统录屏权限；不录制或保存视频。";
+    else self.captureExplanation.stringValue = @"自动同步顶部图标、数字与状态文字，新应用也会自动加入。\n仅在收集栏打开时刷新；读取失败会提示，不保存图片或视频。";
+    self.captureExplanation.toolTip = self.captureExplanation.stringValue;
+}
+
+- (void)settingsFilterChanged:(NSButton *)button {
+    self.settingsPlacementFilter = button.identifier;
+    [self.settingsScroll.contentView scrollToPoint:NSZeroPoint];
+    [self refillSettings];
 }
 
 - (void)refillSettings {
     if (!self.settingsScroll) return;
     self.statusLabel.stringValue = [self settingsStatus];
+    self.statusLabel.toolTip = self.statusLabel.stringValue;
+    self.statusLabel.textColor = self.lastError.length ? NSColor.systemOrangeColor : NSColor.secondaryLabelColor;
+    [self refreshPermissionControls];
     NSView *document = self.settingsScroll.documentView;
+    NSPoint previousOrigin = self.settingsScroll.contentView.bounds.origin;
     for (NSView *view in document.subviews.copy) [view removeFromSuperview];
     NSArray<BarItem *> *top = [self itemsInPlacement:@"top" from:self.catalog];
     NSArray<BarItem *> *bar = [self itemsInPlacement:@"bar" from:self.catalog];
     NSArray<BarItem *> *hidden = [self itemsInPlacement:@"hidden" from:self.catalog];
-    CGFloat height = 24 + 28 + top.count * 46 + 28 + bar.count * 46 + (hidden.count ? 28 + hidden.count * 46 : 0);
-    CGFloat width = MAX(560, NSWidth(self.settingsScroll.contentView.bounds));
+    NSArray *groups = @[self.catalog ?: @[], top, bar, hidden];
+    NSArray *titles = @[@"全部", @"顶部菜单栏", @"收集栏", @"不显示"];
+    for (NSUInteger i = 0; i < self.settingsFilters.count; i++) {
+        NSButton *filter = self.settingsFilters[i];
+        filter.title = [NSString stringWithFormat:@"%@  %lu", titles[i], (unsigned long)[groups[i] count]];
+        filter.state = [filter.identifier isEqualToString:self.settingsPlacementFilter ?: @"all"] ? NSControlStateValueOn : NSControlStateValueOff;
+        [filter setNeedsDisplay:YES];
+    }
+    NSArray<BarItem *> *shown = (!self.settingsPlacementFilter || [self.settingsPlacementFilter isEqualToString:@"all"]) ? self.catalog : [self itemsInPlacement:self.settingsPlacementFilter from:self.catalog];
+    CGFloat height = 36 + MAX(72, shown.count * 48);
+    CGFloat width = NSWidth(self.settingsScroll.contentView.bounds);
     CGFloat visible = NSHeight(self.settingsScroll.contentView.bounds);
     document.frame = NSMakeRect(0, 0, width, MAX(height, visible));
-    CGFloat cursor = NSHeight(document.frame) - 8;
-    cursor = [self placeSection:@"顶部菜单栏" items:top y:cursor document:document];
-    cursor = [self placeSection:@"MacBar" items:bar y:cursor document:document];
-    if (hidden.count) [self placeSection:@"不显示（可随时改回）" items:hidden y:cursor document:document];
+    MBSettingsCard *card = [[MBSettingsCard alloc] initWithFrame:NSMakeRect(0, 0, width, height)];
+    card.autoresizingMask = NSViewWidthSizable;
+    [document addSubview:card];
+    [card addSubview:MBSettingsLabel(@"应用与系统项目", 11, NSFontWeightRegular, NSColor.secondaryLabelColor, NSMakeRect(16, 10, 220, 18))];
+    NSTextField *position = MBSettingsLabel(@"显示位置", 11, NSFontWeightRegular, NSColor.secondaryLabelColor, NSMakeRect(width - 250, 10, 145, 18));
+    position.autoresizingMask = NSViewMinXMargin;
+    [card addSubview:position];
+    for (NSUInteger idx = 0; idx <= shown.count; idx++) {
+        NSBox *divider = [[NSBox alloc] initWithFrame:NSMakeRect(16, 36 + idx * 48, width - 32, 1)];
+        divider.boxType = NSBoxSeparator;
+        divider.autoresizingMask = NSViewWidthSizable;
+        if (idx < shown.count || idx == 0) [card addSubview:divider];
+        if (idx == shown.count) break;
+        BarItem *item = shown[idx];
+        NSArray *group = [self itemsInPlacement:item.placement from:self.catalog];
+        [self addSettingsRow:item atY:36 + idx * 48 index:[group indexOfObjectIdenticalTo:item] count:group.count inDocument:card];
+    }
+    if (!shown.count) {
+        NSString *empty = self.catalog.count ? @"这里还没有图标。切换到「全部」可调整显示位置。" : @"尚未检测到菜单栏图标。应用创建菜单栏图标后会自动出现在这里。";
+        [card addSubview:MBSettingsLabel(empty, 12, NSFontWeightRegular, NSColor.secondaryLabelColor, NSMakeRect(16, 61, width - 32, 22))];
+    }
+    previousOrigin.y = MIN(MAX(0, previousOrigin.y), MAX(0, NSHeight(document.frame) - visible));
+    [self.settingsScroll.contentView scrollToPoint:previousOrigin];
+    [self.settingsScroll reflectScrolledClipView:self.settingsScroll.contentView];
+}
+
+- (void)windowDidResize:(NSNotification *)notification {
+    if (notification.object == self.settingsWindow) [self refillSettings];
 }
 
 - (void)addSettingsRow:(BarItem *)item atY:(CGFloat)y index:(NSUInteger)idx count:(NSUInteger)count inDocument:(NSView *)document {
-    NSImageView *icon = [[NSImageView alloc] initWithFrame:NSMakeRect(16, y + 10, 26, 26)];
-    NSImage *image = item.icon ?: [NSImage imageNamed:NSImageNameApplicationIcon];
-    image = [image copy];
-    image.size = NSMakeSize(22, 22);
-    icon.image = image;
+    CGFloat width = NSWidth(document.bounds);
+    NSImageView *icon = [[NSImageView alloc] initWithFrame:NSMakeRect(16, y + 12, 24, 24)];
+    icon.image = item.icon ?: [NSImage imageNamed:NSImageNameApplicationIcon];
+    icon.imageScaling = NSImageScaleProportionallyUpOrDown;
     [document addSubview:icon];
 
-    NSTextField *name = [NSTextField labelWithString:item.name];
-    name.font = [NSFont systemFontOfSize:13];
-    name.frame = NSMakeRect(50, y + 13, 180, 20);
-    name.lineBreakMode = NSLineBreakByTruncatingTail;
+    NSTextField *name = MBSettingsLabel(item.name ?: @"菜单栏图标", 13, NSFontWeightMedium, NSColor.labelColor, NSMakeRect(52, y + (item.issue.length ? 5 : 14), width - 320, 20));
+    name.autoresizingMask = NSViewWidthSizable;
+    name.toolTip = item.name;
     [document addSubview:name];
+    if (item.issue.length) {
+        NSTextField *subtitle = MBSettingsLabel(item.issue, 11, NSFontWeightRegular, NSColor.systemOrangeColor, NSMakeRect(52, y + 26, width - 320, 17));
+        subtitle.autoresizingMask = NSViewWidthSizable;
+        subtitle.toolTip = item.issue;
+        [document addSubview:subtitle];
+    }
 
-    NSPopUpButton *popup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(220, y + 8, 140, 28) pullsDown:NO];
+    NSPopUpButton *popup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(width - 254, y + 11, 152, 26) pullsDown:NO];
+    popup.font = [NSFont systemFontOfSize:12];
     [popup addItemsWithTitles:@[@"顶部菜单栏", @"收进 MacBar", @"不显示"]];
     [popup selectItemAtIndex:[item.placement isEqualToString:@"top"] ? 0 : ([item.placement isEqualToString:@"hidden"] ? 2 : 1)];
     popup.target = self;
     popup.action = @selector(placementChanged:);
     popup.identifier = item.key;
-    popup.enabled = item.persistentIdentity && AXIsProcessTrusted() && !self.pendingRehide && !self.revealingForClick;
-    popup.toolTip = item.issue;
+    popup.autoresizingMask = NSViewMinXMargin;
+    BOOL editable = item.persistentIdentity && [self accessibilityGranted] && !self.pendingRehide && !self.revealingForClick;
+    popup.enabled = editable;
+    popup.toolTip = item.issue ?: @"选择图标的显示位置";
+    [popup setAccessibilityLabel:[NSString stringWithFormat:@"%@的显示位置", item.name]];
     [document addSubview:popup];
 
-    NSButton *up = [self smallButton:@"上移" action:@selector(moveSetting:)];
-    up.frame = NSMakeRect(368, y + 9, 72, 28);
-    up.identifier = [@"up|" stringByAppendingString:item.key];
-    up.enabled = idx > 0 && item.persistentIdentity && AXIsProcessTrusted() && !self.pendingRehide && !self.revealingForClick && ![item.placement isEqualToString:@"hidden"];
-    [document addSubview:up];
-
-    NSButton *down = [self smallButton:@"下移" action:@selector(moveSetting:)];
-    down.frame = NSMakeRect(446, y + 9, 72, 28);
-    down.identifier = [@"down|" stringByAppendingString:item.key];
-    down.enabled = idx + 1 < count && item.persistentIdentity && AXIsProcessTrusted() && !self.pendingRehide && !self.revealingForClick && ![item.placement isEqualToString:@"hidden"];
-    [document addSubview:down];
+    NSArray *directions = @[@"up", @"down"];
+    for (NSUInteger i = 0; i < 2; i++) {
+        NSString *title = i == 0 ? @"上移" : @"下移";
+        NSButton *button = [self smallButton:@"" action:@selector(moveSetting:)];
+        button.frame = NSMakeRect(width - 88 + i * 36, y + 11, 32, 26);
+        button.image = [NSImage imageWithSystemSymbolName:i == 0 ? @"chevron.up" : @"chevron.down" accessibilityDescription:title];
+        button.imagePosition = NSImageOnly;
+        button.bezelStyle = NSBezelStyleRecessed;
+        button.identifier = [NSString stringWithFormat:@"%@|%@", directions[i], item.key];
+        button.enabled = editable && ![item.placement isEqualToString:@"hidden"] && (i == 0 ? idx > 0 : idx + 1 < count);
+        button.autoresizingMask = NSViewMinXMargin;
+        button.toolTip = [NSString stringWithFormat:@"%@ %@", title, item.name];
+        [button setAccessibilityLabel:button.toolTip];
+        [document addSubview:button];
+    }
 }
 
 - (void)placementChanged:(NSPopUpButton *)popup {
@@ -1049,54 +1231,136 @@ static id MBAXValue(AXUIElementRef element, CFStringRef attribute) {
     [self closePanel];
     [self reloadItems];
     if (!self.settingsWindow) {
-        NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 580, 630)
-                                                        styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable
-                                                          backing:NSBackingStoreBuffered
-                                                            defer:NO];
+        const CGFloat width = 860, height = 820;
+        NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, width, height)
+                                                        styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable | NSWindowStyleMaskMiniaturizable
+                                                          backing:NSBackingStoreBuffered defer:NO];
         window.title = @"MacBar 偏好设置";
-        window.minSize = NSMakeSize(580, 500);
+        window.titlebarAppearsTransparent = YES;
+        window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
+        window.backgroundColor = MBSettingsPaper();
+        window.contentMinSize = NSMakeSize(780, 660);
         window.releasedWhenClosed = NO;
+        window.delegate = self;
+        window.contentView = [[MBSettingsBackground alloc] initWithFrame:NSMakeRect(0, 0, width, height)];
         NSView *content = window.contentView;
-        NSTextField *note = [NSTextField wrappingLabelWithString:@"这里只管理右上角菜单栏图标，普通 Dock 应用不会自动加入。默认不捕获屏幕；开启原样图标后，macOS 会显示屏幕捕获提示。"];
-        note.font = [NSFont systemFontOfSize:12];
-        note.textColor = NSColor.secondaryLabelColor;
-        note.frame = NSMakeRect(16, 10, 548, 48);
-        note.autoresizingMask = NSViewWidthSizable;
-        [content addSubview:note];
-        NSButton *access = [self smallButton:@"辅助功能权限" action:@selector(openAccessibilitySettings)];
-        access.frame = NSMakeRect(16, 64, 140, 28); [content addSubview:access];
-        NSButton *capture = [NSButton checkboxWithTitle:@"原样图标（会触发录屏提示）" target:self action:@selector(toggleCapture:)];
-        capture.frame = NSMakeRect(170, 64, 250, 28);
-        capture.state = [self nativeAppearanceEnabled] ? NSControlStateValueOn : NSControlStateValueOff;
-        [content addSubview:capture];
-        NSButton *screenCapture = [self smallButton:@"录屏权限（可选）" action:@selector(openScreenRecordingSettings)];
-        screenCapture.frame = NSMakeRect(434, 64, 130, 28);
-        [content addSubview:screenCapture];
-        self.statusLabel = [NSTextField labelWithString:@""];
-        self.statusLabel.frame = NSMakeRect(16, 96, 548, 20);
-        self.statusLabel.font = [NSFont systemFontOfSize:11];
-        self.statusLabel.textColor = NSColor.secondaryLabelColor;
-        [content addSubview:self.statusLabel];
+        NSTextField *title = MBSettingsLabel(@"菜单栏项目", 21, NSFontWeightSemibold, NSColor.labelColor, NSMakeRect(28, height - 58, 360, 30));
+        title.autoresizingMask = NSViewMinYMargin;
+        [content addSubview:title];
+        NSTextField *intro = MBSettingsLabel(@"自动发现新出现的菜单栏图标。", 12, NSFontWeightRegular, NSColor.secondaryLabelColor, NSMakeRect(28, height - 83, 400, 20));
+        intro.autoresizingMask = NSViewMinYMargin;
+        [content addSubview:intro];
         NSButton *openBar = [self smallButton:@"打开收集栏" action:@selector(showPanel)];
-        openBar.frame = NSMakeRect(16, 568, 144, 28); openBar.autoresizingMask = NSViewMinYMargin;
+        openBar.frame = NSMakeRect(width - 158, height - 66, 130, 32);
+        openBar.bezelColor = MBSettingsGreen();
+        openBar.keyEquivalent = @"\r";
+        openBar.image = [NSImage imageWithSystemSymbolName:@"square.grid.2x2" accessibilityDescription:nil];
+        openBar.imagePosition = NSImageLeading;
+        openBar.autoresizingMask = NSViewMinXMargin | NSViewMinYMargin;
         [content addSubview:openBar];
-        NSButton *reveal = [self smallButton:@"展开全部顶栏图标" action:@selector(revealAll:)];
-        reveal.frame = NSMakeRect(172, 568, 180, 28); reveal.autoresizingMask = NSViewMinYMargin;
+        NSTextField *newItemLabel = MBSettingsLabel(@"新图标放到", 11, NSFontWeightRegular, NSColor.secondaryLabelColor, NSMakeRect(width - 300, height - 91, 88, 18));
+        newItemLabel.autoresizingMask = NSViewMinXMargin | NSViewMinYMargin;
+        [content addSubview:newItemLabel];
+        self.automaticPlacementControl = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(width - 208, height - 96, 180, 26) pullsDown:NO];
+        [self.automaticPlacementControl addItemsWithTitles:@[@"收集栏", @"顶部菜单栏"]];
+        self.automaticPlacementControl.font = [NSFont systemFontOfSize:11];
+        self.automaticPlacementControl.target = self;
+        self.automaticPlacementControl.action = @selector(defaultItemPlacementChanged:);
+        self.automaticPlacementControl.autoresizingMask = NSViewMinXMargin | NSViewMinYMargin;
+        self.automaticPlacementControl.toolTip = @"自动处理之后首次发现的应用图标，已有位置保持不变；系统图标默认留在顶部。";
+        [self.automaticPlacementControl setAccessibilityLabel:@"新发现的应用图标自动放置位置"];
+        [content addSubview:self.automaticPlacementControl];
+
+        MBSettingsCard *accessibility = [[MBSettingsCard alloc] initWithFrame:NSMakeRect(28, height - 176, width - 56, 64)];
+        accessibility.autoresizingMask = NSViewWidthSizable | NSViewMinYMargin;
+        [accessibility addSubview:MBSettingsLabel(@"辅助功能", 12, NSFontWeightSemibold, NSColor.labelColor, NSMakeRect(16, 10, 76, 20))];
+        self.accessibilityStatus = MBSettingsLabel(@"", 12, NSFontWeightMedium, MBSettingsGreen(), NSMakeRect(95, 10, 170, 20));
+        [accessibility addSubview:self.accessibilityStatus];
+        self.accessibilityExplanation = MBSettingsLabel(@"", 12, NSFontWeightRegular, NSColor.secondaryLabelColor, NSMakeRect(16, 35, width - 232, 20));
+        self.accessibilityExplanation.autoresizingMask = NSViewWidthSizable;
+        [accessibility addSubview:self.accessibilityExplanation];
+        self.accessibilityButton = [self smallButton:@"管理权限…" action:@selector(openAccessibilitySettings)];
+        self.accessibilityButton.frame = NSMakeRect(width - 190, 18, 118, 28);
+        self.accessibilityButton.autoresizingMask = NSViewMinXMargin;
+        [accessibility addSubview:self.accessibilityButton];
+        [content addSubview:accessibility];
+
+        NSMutableArray *filters = [NSMutableArray array];
+        NSArray *placements = @[@"all", @"top", @"bar", @"hidden"];
+        NSArray *filterWidths = @[@76, @120, @92, @92];
+        CGFloat filterX = 28;
+        for (NSUInteger i = 0; i < placements.count; i++) {
+            MBSettingsFilter *filter = [[MBSettingsFilter alloc] initWithFrame:NSMakeRect(filterX, height - 223, [filterWidths[i] doubleValue], 30)];
+            [filter setButtonType:NSButtonTypePushOnPushOff];
+            filter.bordered = NO;
+            filter.identifier = placements[i];
+            filter.target = self;
+            filter.action = @selector(settingsFilterChanged:);
+            filter.autoresizingMask = NSViewMinYMargin;
+            [content addSubview:filter];
+            [filters addObject:filter];
+            filterX += NSWidth(filter.frame) + 2;
+        }
+        self.settingsFilters = filters;
+        NSButton *reveal = [self smallButton:@"展开全部" action:@selector(revealAll:)];
+        reveal.frame = NSMakeRect(width - 254, height - 222, 88, 28);
+        reveal.autoresizingMask = NSViewMinXMargin | NSViewMinYMargin;
         [content addSubview:reveal];
         NSButton *retry = [self smallButton:@"重新应用布局" action:@selector(retryLayout:)];
-        retry.frame = NSMakeRect(364, 568, 160, 28); retry.autoresizingMask = NSViewMinYMargin;
+        retry.frame = NSMakeRect(width - 158, height - 222, 130, 28);
+        retry.autoresizingMask = NSViewMinXMargin | NSViewMinYMargin;
         [content addSubview:retry];
-        self.settingsScroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(0, 124, 580, 430)];
+
+        self.settingsScroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(28, 219, width - 56, height - 454)];
         self.settingsScroll.hasVerticalScroller = YES;
+        self.settingsScroll.scrollerStyle = NSScrollerStyleOverlay;
+        self.settingsScroll.autohidesScrollers = YES;
         self.settingsScroll.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
         self.settingsScroll.drawsBackground = NO;
-        NSView *document = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 560, 500)];
-        self.settingsScroll.documentView = document;
+        self.settingsScroll.wantsLayer = YES;
+        self.settingsScroll.layer.cornerRadius = 12;
+        self.settingsScroll.layer.masksToBounds = YES;
+        self.settingsScroll.documentView = [[MBSettingsDocument alloc] initWithFrame:NSMakeRect(0, 0, width - 56, 500)];
         [content addSubview:self.settingsScroll];
+        NSTextField *scope = MBSettingsLabel(@"仅列出右上角菜单栏图标；箭头调整同一位置内的顺序。", 11, NSFontWeightRegular, NSColor.secondaryLabelColor, NSMakeRect(32, 193, width - 64, 17));
+        scope.autoresizingMask = NSViewWidthSizable;
+        [content addSubview:scope];
+
+        MBSettingsCard *icons = [[MBSettingsCard alloc] initWithFrame:NSMakeRect(28, 52, width - 56, 126)];
+        icons.autoresizingMask = NSViewWidthSizable;
+        [icons addSubview:MBSettingsLabel(@"图标显示", 12, NSFontWeightSemibold, NSColor.labelColor, NSMakeRect(16, 12, 200, 20))];
+        self.recordingStatus = MBSettingsLabel(@"", 11, NSFontWeightMedium, NSColor.secondaryLabelColor, NSMakeRect(width - 322, 12, 248, 20));
+        self.recordingStatus.alignment = NSTextAlignmentRight;
+        self.recordingStatus.autoresizingMask = NSViewMinXMargin;
+        [icons addSubview:self.recordingStatus];
+        self.iconModeControl = [NSSegmentedControl segmentedControlWithLabels:@[@"标准图标", @"与顶部一致"] trackingMode:NSSegmentSwitchTrackingSelectOne target:self action:@selector(iconModeChanged:)];
+        self.iconModeControl.frame = NSMakeRect(16, 38, 248, 26);
+        self.iconModeControl.font = [NSFont systemFontOfSize:12];
+        self.iconModeControl.segmentStyle = NSSegmentStyleRounded;
+        [self.iconModeControl setAccessibilityLabel:@"收集栏图标显示方式"];
+        [icons addSubview:self.iconModeControl];
+        NSButton *help = [self smallButton:@"了解显示方式…" action:@selector(explainIconSync:)];
+        help.bezelStyle = NSBezelStyleInline;
+        help.attributedTitle = [[NSAttributedString alloc] initWithString:help.title attributes:@{NSFontAttributeName: [NSFont systemFontOfSize:11], NSForegroundColorAttributeName: MBSettingsGreen()}];
+        help.frame = NSMakeRect(278, 39, 126, 24);
+        [icons addSubview:help];
+        self.captureExplanation = MBSettingsLabel(@"", 11, NSFontWeightRegular, NSColor.secondaryLabelColor, NSMakeRect(16, 74, width - 90, 40));
+        self.captureExplanation.maximumNumberOfLines = 2;
+        self.captureExplanation.lineBreakMode = NSLineBreakByWordWrapping;
+        self.captureExplanation.autoresizingMask = NSViewWidthSizable;
+        [icons addSubview:self.captureExplanation];
+        self.recordingSettingsButton = [self smallButton:@"完成首次设置…" action:@selector(configureIconSync:)];
+        self.recordingSettingsButton.frame = NSMakeRect(width - 208, 36, 136, 28);
+        self.recordingSettingsButton.autoresizingMask = NSViewMinXMargin;
+        [icons addSubview:self.recordingSettingsButton];
+        [content addSubview:icons];
+        self.statusLabel = MBSettingsLabel(@"", 11, NSFontWeightRegular, NSColor.secondaryLabelColor, NSMakeRect(32, 22, width - 64, 17));
+        self.statusLabel.autoresizingMask = NSViewWidthSizable;
+        [content addSubview:self.statusLabel];
         self.settingsWindow = window;
+        [window center];
     }
     [self refillSettings];
-    [self.settingsWindow center];
     [self.settingsWindow makeKeyAndOrderFront:nil];
     [NSApp activateIgnoringOtherApps:YES];
 }

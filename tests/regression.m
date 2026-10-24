@@ -38,6 +38,7 @@ static NSUInteger checks = 0;
 @property BOOL captureAllowed;
 @property NSDictionary *nativeFrames;
 @property NSUInteger captureCalls;
+@property NSUInteger recordingPermissionRequests;
 @property NSArray *fallbackRequests;
 @property NSUInteger appOpenCalls;
 @property NSUInteger nativeActivationCalls;
@@ -59,6 +60,7 @@ static NSUInteger checks = 0;
 - (BOOL)nativeAppearanceEnabled { return self.useRealNativePolicy ? [super nativeAppearanceEnabled] : self.nativeEnabled; }
 - (BOOL)collectionIsVisible { return self.collectionVisibleForCapture; }
 - (BOOL)capturePermissionGranted { return self.captureAllowed; }
+- (void)openScreenRecordingSettings { self.recordingPermissionRequests++; }
 - (NSImage *)nativeImageForItem:(BarItem *)item bounds:(CGRect)bounds {
     self.captureCalls++; return self.nativeFrames[item.key];
 }
@@ -227,6 +229,17 @@ int main(void) {
         BarItem *newSystem = [BarItem new]; newSystem.key = @"new-system"; newSystem.bundleID = @"com.apple.new"; newSystem.systemItem = YES; newSystem.persistentIdentity = YES;
         [layout rememberLayoutForItems:@[newSystem]];
         CHECK([layout itemsInPlacement:@"top" from:@[newSystem]].count == 1, "new system icon defaults to top until explicitly changed");
+        BarItem *autoOne = [BarItem new]; autoOne.key = @"auto-one"; autoOne.bundleID = @"org.unknown.one"; autoOne.persistentIdentity = YES;
+        [layout rememberLayoutForItems:@[autoOne]];
+        CHECK([layout itemsInPlacement:@"bar" from:@[autoOne]].count == 1, "unknown newly discovered app automatically enters collection without per-app setup");
+        [layout.testDefaults setObject:@"top" forKey:@"MBNewItemPlacement"];
+        BarItem *autoTwo = [BarItem new]; autoTwo.key = @"auto-two"; autoTwo.bundleID = @"org.unknown.two"; autoTwo.persistentIdentity = YES;
+        [layout rememberLayoutForItems:@[autoOne, autoTwo]];
+        CHECK(([layout itemsInPlacement:@"top" from:@[autoOne, autoTwo]].count == 1 && [layout itemsInPlacement:@"bar" from:@[autoOne, autoTwo]].count == 1), "global new-item preference affects future discovery without moving existing items");
+        CHECK([[[layout.testDefaults stringArrayForKey:@"MBTopOrderV2"] lastObject] isEqualToString:autoTwo.key], "global top preference works for arbitrary app identity");
+        [layout.testDefaults setObject:@"invalid" forKey:@"MBNewItemPlacement"];
+        CHECK([[layout defaultItemPlacement] isEqualToString:@"bar"], "invalid default placement falls back to recoverable collection rather than hiding apps");
+        [layout.testDefaults removeObjectForKey:@"MBNewItemPlacement"];
         layout.suppressed = YES; layout.restoreResult = NO;
         CHECK(![layout applyPlacement:@"hidden" toItem:system] && [[layout.testDefaults stringArrayForKey:@"MBBarOrderV2"] containsObject:system.key], "rejected system movement keeps original saved placement");
         CHECK([layout.lastError containsString:@"系统图标"], "rejected system movement explains failure");
@@ -261,13 +274,22 @@ int main(void) {
         CHECK(![privacy nativeAppearanceEnabled], "turning native mode off prevents capture despite earlier consent");
         TestApp *render = [TestApp new]; render.nativeEnabled = YES; render.collectionVisibleForCapture = YES;
         BarItem *textItem = [BarItem new]; textItem.key = @"native-text"; textItem.windowID = 700; textItem.placement = @"bar";
-        render.catalog = [NSMutableArray arrayWithObject:textItem];
+        render.catalog = [NSMutableArray arrayWithObject:textItem]; render.items = [NSMutableArray arrayWithObject:textItem];
         render.windows = @[Window(42, 700, CGRectMake(-5000, 0, 168, 37), NO, 25)];
         render.imageCache = [NSMutableDictionary dictionary]; render.nativeFrames = @{textItem.key: native};
         [render captureAvailableImages];
         CHECK(render.captureCalls == 0 && textItem.statusImage == nil, "native capture never runs without screen recording permission");
         render.captureAllowed = YES; [render captureAvailableImages];
         CHECK(textItem.statusImage == native && [render slotWidthForItem:textItem] == 174, "native image uses full width instead of old 96-point cap");
+        CHECK(!textItem.statusImageStale && ![render.staleImageKeys containsObject:textItem.key], "successful sync is current rather than marked as stale");
+        BarItem *topCapture = [BarItem new]; topCapture.key = @"top-capture"; topCapture.placement = @"top";
+        BarItem *hiddenCapture = [BarItem new]; hiddenCapture.key = @"hidden-capture"; hiddenCapture.placement = @"hidden";
+        render.catalog = [NSMutableArray arrayWithArray:@[textItem, topCapture, hiddenCapture]];
+        render.items = render.catalog;
+        NSUInteger scopedCaptureCalls = render.captureCalls;
+        [render captureAvailableImages];
+        CHECK(render.captureCalls == scopedCaptureCalls + 1 && !topCapture.statusImage && !hiddenCapture.statusImage, "only displayed collection items are captured, excluding top and hidden windows");
+        render.items = [NSMutableArray arrayWithObject:textItem];
         NSUInteger previousCaptureCalls = render.captureCalls;
         render.collectionVisibleForCapture = NO; [render captureAvailableImages];
         CHECK(render.captureCalls == previousCaptureCalls, "closed collection never captures in the background even when enabled and authorized");
@@ -279,13 +301,25 @@ int main(void) {
         CHECK(textItem.statusImage == updated && [render slotWidthForItem:textItem] == 196, "dynamic text changes refresh snapshot and layout width");
         render.nativeFrames = @{}; [render captureAvailableImages];
         CHECK(textItem.statusImage == updated && render.imageCache[textItem.key] == updated, "failed capture retains last successful native image");
+        CHECK(textItem.statusImageStale && [render.staleImageKeys containsObject:textItem.key], "failed refresh marks cached pixels as stale so unread counts are not presented as current");
         CHECK(render.fallbackRequests.count == 1 && [render.fallbackRequests[0][@"window"] unsignedIntValue] == 700, "missing native frame requests fallback for exact status window");
         textItem.pid = 42;
         CHECK(![render acceptNativeImage:native forKey:textItem.key pid:42 window:701], "late fallback for replaced status window is rejected");
         CHECK(![render acceptNativeImage:native forKey:textItem.key pid:43 window:700], "late fallback for another process is rejected");
         CHECK([render acceptNativeImage:native forKey:textItem.key pid:42 window:700] && textItem.statusImage == native, "valid asynchronous frame updates native status content");
+        CHECK(!textItem.statusImageStale && ![render.staleImageKeys containsObject:textItem.key], "successful fallback clears the stale warning");
+        CHECK(![render acceptNativeImage:native forKey:topCapture.key pid:0 window:0], "fallback cannot capture an item that has moved back to the top");
         render.captureAllowed = NO;
         CHECK(![render acceptNativeImage:updated forKey:textItem.key pid:42 window:700], "permission revocation rejects in-flight capture results");
+        privacy.scanOverride = @[autoOne, autoTwo]; privacy.captureAllowed = YES;
+        [privacy setNativeAppearanceEnabled:YES];
+        CHECK([privacy nativeAppearanceEnabled] && privacy.recordingPermissionRequests == 0, "enabling already authorized global sync does not request per-application permission");
+        BarItem *autoThree = [BarItem new]; autoThree.key = @"auto-three"; autoThree.bundleID = @"org.unknown.three"; autoThree.persistentIdentity = YES;
+        privacy.scanOverride = @[autoOne, autoTwo, autoThree]; [privacy reloadItems];
+        CHECK([privacy nativeAppearanceEnabled] && privacy.recordingPermissionRequests == 0 && [privacy.items containsObject:autoThree], "another new app automatically joins under existing global sync without further permission prompts");
+        privacy.imageCache = [NSMutableDictionary dictionaryWithObject:native forKey:textItem.key]; privacy.staleImageKeys = [NSMutableSet setWithObject:textItem.key];
+        [privacy setNativeAppearanceEnabled:NO];
+        CHECK(![privacy nativeAppearanceEnabled] && !privacy.imageCache.count && !privacy.staleImageKeys.count, "returning to standard mode clears native images and stale sync state");
         NSImage *whiteGlyph = GlyphImage(1, 1, 1, 1, NO);
         NSImage *blackGlyph = GlyphImage(0, 0, 0, 1, NO);
         CHECK(MBNativeForegroundLuminance(whiteGlyph).doubleValue > 0.99, "white native glyph detected despite transparent padding");
